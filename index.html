@@ -326,15 +326,34 @@ const DATA = {"a":[
  {"id":"340c16b1","voice":"b","date":"04-07-2026","time":"21:42","n":8,"hi":["じゃあ 諦めてるの？","諦めてるわけじゃない。ただ、無意味な理想に縋るのをやめて、現実的な生存手段に目を向けてるだけだ。感情論で世界が変わるなら、とっくに平和になってるよ。"],"turns":[["それであなたは何を考えてるの？","平和主義なんてただの幻想だよ。結局、力による均衡が保たれていない限り、弱者は常に食い物にされる。それがこの世界の、逃れられない現実だ。"],["じゃあ 諦めてるの？","諦めてるわけじゃない。ただ、無意味な理想に縋るのをやめて、現実的な生存手段に目を向けてるだけだ。感情論で世界が変わるなら、とっくに平和になってるよ。"],["じゃあなんで紛争は続いていると思うの？","資源、領土、そして生存。人間が本能的に求めるものが衝突すれば、紛争は避けられない。抑止力が機能しない場所では、力を持つ者が勝つ。その繰り返しだよ。"]]}
 ]};
 
+/* ====== FULL LOG LOADER ======
+   リポジトリ直下の convai_futatsu_logs.json（全会話ログ）を読み込む。
+   取得できない場合（file:// で直接開いた等）は上の埋め込みサンプルで表示。 */
+async function loadFullLogs(){
+  try{
+    const r = await fetch('convai_futatsu_logs.json', {cache:'no-store'});
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    if(j && Array.isArray(j.a) && Array.isArray(j.b)){
+      DATA.a = j.a; DATA.b = j.b;
+      renderHighlights(currentFilter); renderArchive();
+    }
+  }catch(e){ /* fallback: embedded sample */ }
+}
+
 /* ====== RENDER ====== */
 const VLAB = {a:'声 A', b:'声 B'};
+let currentFilter = 'all';
 const allSessions = () => [...DATA.a, ...DATA.b];
 const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const pad = n => String(n).padStart(2,'0');
+const dnum = s => { const m=(s.date||'').split('-'), t=(s.time||'0:0').split(':');
+  return (+m[2]||0)*1e8+(+m[1]||0)*1e6+(+m[0]||0)*1e4+(+t[0]||0)*100+(+t[1]||0); };
 
 function renderHighlights(filter){
+  currentFilter = filter || 'all';
   const grid = document.getElementById('hlGrid');
-  let items = allSessions().filter(s=>s.hi);
+  let items = allSessions().filter(s=>s.hi && s.hi[1]);
   if(filter && filter!=='all') items = items.filter(s=>s.voice===filter);
   items.sort((x,y)=>y.n-x.n);
   grid.innerHTML = items.map((s,i)=>`
@@ -353,7 +372,7 @@ function renderHighlights(filter){
 
 function renderArchive(){
   const list = document.getElementById('archList');
-  const items = allSessions().sort((x,y)=> (x.date<y.date?1:x.date>y.date?-1:0) || y.n-x.n);
+  const items = allSessions().sort((x,y)=> dnum(y)-dnum(x) || y.n-x.n);
   list.innerHTML = items.map(s=>`
     <div class="arow ${s.voice}" onclick="openLog('${s.voice}','${s.id}')">
       <div class="vbadge">${s.voice.toUpperCase()}</div>
@@ -388,7 +407,7 @@ document.querySelectorAll('.filters button').forEach(b=>{
   b.onclick=()=>{ document.querySelectorAll('.filters button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); renderHighlights(b.dataset.f); };
 });
 
-renderHighlights('all'); renderArchive();
+renderHighlights('all'); renderArchive(); loadFullLogs();
 
 const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}})},{threshold:.1});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
