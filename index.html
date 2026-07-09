@@ -109,6 +109,10 @@
   .card.a .reply{border-color:var(--a);} .card.b .reply{border-color:var(--b);}
   .card .more{margin-top:20px;padding-top:16px;border-top:1px solid var(--hair);font-family:"Inter";font-weight:600;font-size:11px;letter-spacing:.08em;color:var(--mute);display:flex;justify-content:space-between;align-items:center;}
   .card:hover .more{color:var(--ink);}
+  .hl-more{text-align:center;margin-top:28px;}
+  .hl-more button{font-family:"Inter";font-weight:600;font-size:13px;letter-spacing:.06em;padding:14px 34px;
+    border:1px solid var(--ink);background:var(--paper);color:var(--ink);cursor:pointer;transition:.2s;}
+  .hl-more button:hover{background:var(--ink);color:#fff;}
 
   /* Archive */
   .arch{background:var(--paper);border-top:1px solid var(--hair);}
@@ -246,7 +250,9 @@
         <button data-f="b"><span class="m"></span>声 B</button>
       </div>
     </div>
-    <div class="reveal"><div class="grid" id="hlGrid"></div></div>
+    <div class="reveal"><div class="grid" id="hlGrid"></div>
+      <div class="hl-more"><button id="hlMoreBtn" onclick="hlExpanded=true;renderHighlights(currentFilter);">すべてのハイライトを表示</button></div>
+    </div>
   </div>
 </section>
 
@@ -256,7 +262,7 @@
     <div class="reveal">
       <div class="eyebrow">Full Archive ／ すべての記録</div>
       <h2 class="h2">交わされた、すべての声。</h2>
-      <p class="lead">来場者と交わされた会話をすべて収録しています。行をクリックすると、その対話の全文を読むことができます。<span style="color:var(--mute)">（沈黙が続いたときの反復した促し文は省いています）</span></p>
+      <p class="lead">来場者と交わされた会話をすべて収録しています。行をクリックすると、その対話の全文を読むことができます。<span style="color:var(--mute)">（「こんにちは。話をしよう」の呼びかけごとに来場者が入れ替わるため、来場者ひとりごとの対話に分けて収録。沈黙が続いたときの反復した促し文は省いています）</span></p>
     </div>
     <div class="reveal alist" id="archList"></div>
   </div>
@@ -269,7 +275,7 @@
     <div class="stat-row">
       <div class="stat a"><div class="n" data-count="73">73</div><div class="l">声 A の対話セッション</div></div>
       <div class="stat b"><div class="n" data-count="85">85</div><div class="l">声 B の対話セッション</div></div>
-      <div class="stat"><div class="n" id="statLogs">40</div><div class="l">中身のある対話ログ</div></div>
+      <div class="stat"><div class="n" id="statLogs">40</div><div class="l">記録された来場者との対話</div></div>
     </div>
   </div>
 </section>
@@ -326,6 +332,30 @@ const DATA = {"a":[
  {"id":"340c16b1","voice":"b","date":"04-07-2026","time":"21:42","n":8,"hi":["じゃあ 諦めてるの？","諦めてるわけじゃない。ただ、無意味な理想に縋るのをやめて、現実的な生存手段に目を向けてるだけだ。感情論で世界が変わるなら、とっくに平和になってるよ。"],"turns":[["それであなたは何を考えてるの？","平和主義なんてただの幻想だよ。結局、力による均衡が保たれていない限り、弱者は常に食い物にされる。それがこの世界の、逃れられない現実だ。"],["じゃあ 諦めてるの？","諦めてるわけじゃない。ただ、無意味な理想に縋るのをやめて、現実的な生存手段に目を向けてるだけだ。感情論で世界が変わるなら、とっくに平和になってるよ。"],["じゃあなんで紛争は続いていると思うの？","資源、領土、そして生存。人間が本能的に求めるものが衝突すれば、紛争は避けられない。抑止力が機能しない場所では、力を持つ者が勝つ。その繰り返しだよ。"]]}
 ]};
 
+/* ====== CONVERSATION SPLITTER ======
+   「こんにちは。話をしよう」「Hello, let's talk.」は新しい来場者の開始トリガー。
+   1セッション内に複数の来場者の対話が連結されているため、トリガーで分割し
+   「来場者ごとの対話」を1単位として扱う。 */
+const TRIG = /(話を(しよう|しましょう|始めよう))|let'?s\s+talk/i;
+function splitSessions(arr, voice){
+  const out=[];
+  for(const s of (arr||[])){
+    const groups=[]; let cur=[];
+    for(const t of (s.turns||[])){
+      const u=(t[0]||'').trim();
+      if(cur.length && TRIG.test(u)){ groups.push(cur); cur=[]; }
+      cur.push(t);
+    }
+    if(cur.length) groups.push(cur);
+    groups.forEach((g,k)=>{
+      let hi=g[0]; for(const x of g){ if((x[1]||'').length>(hi[1]||'').length) hi=x; }
+      out.push({id:(s.id||'s')+'-'+(k+1), sid:s.id, part:k+1, parts:groups.length,
+        voice:voice, date:s.date, time:s.time, n:g.length, hi:hi, turns:g});
+    });
+  }
+  return out;
+}
+
 /* ====== FULL LOG LOADER ======
    リポジトリ直下の convai_futatsu_logs.json（全会話ログ）を読み込む。
    取得できない場合（file:// で直接開いた等）は上の埋め込みサンプルで表示。 */
@@ -335,7 +365,7 @@ async function loadFullLogs(){
     if(!r.ok) throw new Error(r.status);
     const j = await r.json();
     if(j && Array.isArray(j.a) && Array.isArray(j.b)){
-      DATA.a = j.a; DATA.b = j.b;
+      DATA.a = splitSessions(j.a,'a'); DATA.b = splitSessions(j.b,'b');
       renderHighlights(currentFilter); renderArchive();
     }
   }catch(e){ /* fallback: embedded sample */ }
@@ -350,12 +380,18 @@ const pad = n => String(n).padStart(2,'0');
 const dnum = s => { const m=(s.date||'').split('-'), t=(s.time||'0:0').split(':');
   return (+m[2]||0)*1e8+(+m[1]||0)*1e6+(+m[0]||0)*1e4+(+t[0]||0)*100+(+t[1]||0); };
 
+let hlExpanded = false;
 function renderHighlights(filter){
   currentFilter = filter || 'all';
   const grid = document.getElementById('hlGrid');
-  let items = allSessions().filter(s=>s.hi && s.hi[1]);
+  let items = allSessions().filter(s=>s.hi && s.hi[1] && s.n>=2);
   if(filter && filter!=='all') items = items.filter(s=>s.voice===filter);
   items.sort((x,y)=>y.n-x.n);
+  const total = items.length;
+  if(!hlExpanded) items = items.slice(0,12);
+  const btn = document.getElementById('hlMoreBtn');
+  if(btn){ btn.style.display = (!hlExpanded && total>12) ? '' : 'none';
+    btn.textContent = 'すべてのハイライトを表示（全 '+total+' 件）'; }
   grid.innerHTML = items.map((s,i)=>`
     <div class="card ${s.voice}" onclick="openLog('${s.voice}','${s.id}')">
       <div class="top">
@@ -389,7 +425,8 @@ function openLog(voice, id){
   sheet.className = 'sheet '+voice; sh.className = 'sheet-h '+voice;
   sh.querySelector('.vbadge').textContent = voice.toUpperCase();
   document.getElementById('sheetTitle').textContent = VLAB[voice]+' の対話';
-  document.getElementById('sheetDate').textContent = s.date+'  '+(s.time||'');
+  document.getElementById('sheetDate').textContent = s.date+'  '+(s.time||'')
+    + (s.parts>1 ? ' ・ 同セッション内の来場者 '+s.part+' 人目／'+s.parts+' 人' : '');
   const body = s.turns.map(t=>{
     const v = t[0] ? `<div class="msg v"><div class="b">${esc(t[0])}</div></div>` : '';
     return v+`<div class="msg c"><div class="b">${esc(t[1])}</div></div>`;
@@ -407,6 +444,7 @@ document.querySelectorAll('.filters button').forEach(b=>{
   b.onclick=()=>{ document.querySelectorAll('.filters button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); renderHighlights(b.dataset.f); };
 });
 
+DATA.a = splitSessions(DATA.a,'a'); DATA.b = splitSessions(DATA.b,'b');
 renderHighlights('all'); renderArchive(); loadFullLogs();
 
 const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}})},{threshold:.1});
